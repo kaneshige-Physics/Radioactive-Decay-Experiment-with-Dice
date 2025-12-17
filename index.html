@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>サイコロ崩壊実験 Final V8 (初期プロット修正)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <style>
+        :root {
+            --dice-size: 30px;
+            --dice-font: 16px;
+            --dice-gap: 3px;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            margin: 0; padding: 0;
+            height: 100vh;
+            display: flex; flex-direction: column;
+            background-color: #2c3e50; color: #333;
+            overflow: hidden;
+        }
+
+        /* 上部エリア */
+        #top-panel {
+            flex: 6;
+            background-color: #ecf0f1; margin: 10px;
+            border-radius: 8px; padding: 10px;
+            overflow: hidden; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column;
+            position: relative;
+        }
+        
+        #header-row {
+            flex: 0 0 auto;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #bdc3c7;
+            padding-bottom: 5px;
+        }
+        h2 { margin: 0; font-size: 1.2rem; color: #34495e; }
+
+        /* サイコロコンテナ */
+        #diceContainer { 
+            flex: 1; 
+            display: flex; 
+            flex-wrap: wrap; 
+            gap: var(--dice-gap); 
+            justify-content: center; 
+            align-content: flex-start;
+            overflow: hidden;
+            padding: 2px;
+        }
+
+        .dice {
+            width: var(--dice-size); 
+            height: var(--dice-size);
+            font-size: var(--dice-font);
+            
+            background-color: white; border: 1px solid #bdc3c7; border-radius: 15%;
+            display: flex; justify-content: center; align-items: center;
+            font-weight: bold; color: #2c3e50;
+            box-shadow: 1px 1px 2px rgba(0,0,0,0.1); user-select: none;
+            transition: transform 0.1s;
+            box-sizing: border-box;
+        }
+        .dice.is-one { background-color: #e74c3c; color: white; border-color: #c0392b; transform: scale(1.1); z-index: 10; box-shadow: 0 0 8px rgba(231, 76, 60, 0.6); }
+        .dice.decayed { opacity: 0; pointer-events: none; }
+
+        /* 下部エリア */
+        #bottom-container { flex: 4; display: flex; gap: 10px; padding: 0 10px 10px 10px; min-height: 0; }
+        
+        #controls-panel {
+            flex: 1; background-color: #fff; border-radius: 8px; padding: 15px;
+            display: flex; flex-direction: column; justify-content: center; gap: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        #graph-panel {
+            flex: 1; background-color: #fff; border-radius: 8px; padding: 10px;
+            position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column;
+        }
+        #chartWrapper { flex: 1; position: relative; width: 100%; height: 100%; }
+
+        /* UI要素 */
+        .input-row { display: flex; gap: 5px; align-items: center; background: #f0f2f5; padding: 6px; border-radius: 6px; }
+        .input-row label { font-weight: bold; font-size: 13px; white-space: nowrap; }
+        input[type="number"] { padding: 4px; flex: 1; font-size: 16px; text-align: center; border: 2px solid #ddd; border-radius: 4px; min-width: 0; }
+        
+        .status-text { font-size: 13px; color: #7f8c8d; text-align: center; min-height: 1.5em; font-weight: bold; margin-top: auto; }
+
+        button {
+            padding: 8px; font-size: 14px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer;
+            color: white; box-shadow: 0 3px 0 rgba(0,0,0,0.1); width: 100%; transition: 0.1s;
+        }
+        button:active { transform: translateY(2px); box-shadow: none; }
+        button:disabled { background-color: #95a5a6; cursor: not-allowed; transform: none; box-shadow: none; opacity: 0.7; }
+        
+        .btn-row { display: flex; gap: 5px; }
+
+        #btnChange { background-color: #e67e22; width: auto; padding: 4px 12px; }
+        #btnReset { background-color: #34495e; }
+        #btnRoll { background-color: #3498db; flex: 1; }
+        #btnRemove { background-color: #e74c3c; flex: 1; }
+        #btnAuto10 { background-color: #27ae60; }
+        #btnFinish { background-color: #8e44ad; margin-top: 5px; }
+
+        #fittingResult {
+            position: absolute; top: 10px; right: 15px;
+            background: rgba(255,255,255,0.95); border: 2px solid #8e44ad;
+            padding: 10px; border-radius: 6px; font-size: 13px;
+            display: none; pointer-events: none; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="top-panel">
+        <div id="header-row">
+            <h2>原子核 (サイコロ) の状態 <span id="countDisplay" style="float:right;">N = 0</span></h2>
+        </div>
+        <div id="diceContainer"></div>
+    </div>
+
+    <div id="bottom-container">
+        <div id="controls-panel">
+            <div class="input-row">
+                <label>初期個数:</label>
+                <input type="number" id="initialInput" value="120" min="1" max="500">
+                <button id="btnChange">変更</button>
+            </div>
+            
+            <button id="btnReset">最初から (同じ数でリセット)</button>
+            
+            <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
+            
+            <div class="btn-row">
+                <button id="btnRoll" disabled>① 振る</button>
+                <button id="btnRemove" disabled>② 取り除く</button>
+            </div>
+            <button id="btnAuto10" disabled>10回連続で進める</button>
+            
+            <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
+            <button id="btnFinish" disabled>実験終了 (グラフ作成)</button>
+            
+            <div class="status-text" id="statusMessage">初期値を設定して変更を押してください</div>
+        </div>
+
+        <div id="graph-panel">
+            <div id="fittingResult"></div>
+            <div id="chartWrapper">
+                <canvas id="decayChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MAX_DICE = 500;
+        const FIXED_X_MAX = 30;
+
+        let initialCount = 120;
+        let currentCount = 0;
+        let turn = 0;
+        let historyData = [];
+        let diceElements = [];
+        let chart;
+        let animationFrameId;
+
+        // DOM Elements
+        const diceContainer = document.getElementById('diceContainer');
+        const statusMessage = document.getElementById('statusMessage');
+        const countDisplay = document.getElementById('countDisplay');
+        const btnChange = document.getElementById('btnChange');
+        const btnReset = document.getElementById('btnReset');
+        const btnRoll = document.getElementById('btnRoll');
+        const btnRemove = document.getElementById('btnRemove');
+        const btnAuto10 = document.getElementById('btnAuto10');
+        const btnFinish = document.getElementById('btnFinish');
+        const fittingResult = document.getElementById('fittingResult');
+        const initialInput = document.getElementById('initialInput');
+
+        window.onload = function() {
+            initChart();
+            applyInitialCount(120);
+            window.addEventListener('resize', () => {
+                if(animationFrameId) cancelAnimationFrame(animationFrameId);
+                animationFrameId = requestAnimationFrame(adjustDiceSize);
+            });
+        };
+
+        btnChange.onclick = () => {
+            let val = parseInt(initialInput.value);
+            if(isNaN(val) || val < 1) val = 1;
+            if(val > MAX_DICE) val = MAX_DICE;
+            initialInput.value = val;
+            applyInitialCount(val);
+        };
+
+        btnReset.onclick = () => {
+            applyInitialCount(initialCount);
+        };
+        
+        btnRoll.onclick = startRollAnimation;
+        btnRemove.onclick = removeDecayed;
+        btnAuto10.onclick = runAuto10;
+        btnFinish.onclick = finishExperiment;
+        
+        initialInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') btnChange.click();
+        });
+
+        // --- レイアウト調整 ---
+        function adjustDiceSize() {
+            if (currentCount <= 0) return;
+            const cw = diceContainer.clientWidth;
+            const ch = diceContainer.clientHeight;
+            if(cw === 0 || ch === 0) return;
+
+            const area = cw * ch;
+            const count = initialCount; 
+            
+            let maxAreaPerDice = area / count;
+            let side = Math.floor(Math.sqrt(maxAreaPerDice));
+
+            side = side - 4; // 余白確保
+
+            if (side > 50) side = 50; 
+            if (side < 12) side = 12;
+
+            const gap = Math.max(2, Math.floor(side / 8));
+            const fontSize = Math.floor(side * 0.55);
+
+            document.documentElement.style.setProperty('--dice-size', `${side}px`);
+            document.documentElement.style.setProperty('--dice-font', `${fontSize}px`);
+            document.documentElement.style.setProperty('--dice-gap', `${gap}px`);
+        }
+
+        // --- 実験ロジック ---
+
+        function applyInitialCount(val) {
+            initialCount = val;
+            currentCount = val;
+
+            // 1. グラフの上限を更新（余白を持たせる）
+            const yMaxBuffer = Math.ceil(initialCount * 1.1);
+            chart.options.scales.y.max = yMaxBuffer;
+            
+            // 2. 過去のフィッティング結果をクリア
+            fittingResult.style.display = 'none';
+            chart.data.datasets[1].data = [];
+
+            // 3. サイコロ生成と初期データのプロットを実行
+            generateDice(initialCount);
+        }
+
+        function generateDice(count) {
+            turn = 0;
+            // 重要：ここで初期データ(t=0)を設定
+            historyData = [{x: 0, y: count}];
+            diceElements = [];
+
+            // サイコロDOM生成
+            diceContainer.innerHTML = '';
+            const fragment = document.createDocumentFragment();
+            for(let i=0; i<count; i++) {
+                const d = document.createElement('div');
+                d.className = 'dice';
+                d.innerText = '?';
+                fragment.appendChild(d);
+                diceElements.push({ el: d, value: 0, isDecayed: false });
+            }
+            diceContainer.appendChild(fragment);
+
+            adjustDiceSize();
+
+            statusMessage.innerText = `準備完了 (N=${count})`;
+            countDisplay.innerText = `N = ${count}`;
+            
+            // グラフを更新（t=0の点を描画）
+            updateChartData();
+            
+            btnReset.disabled = false;
+            btnRoll.disabled = false;
+            btnAuto10.disabled = false;
+            btnFinish.disabled = true;
+        }
+
+        function startRollAnimation() {
+            if(currentCount <= 0) return;
+            setControlsDisabled(true);
+            statusMessage.innerText = "サイコロを振っています...";
+
+            let startTime = null;
+            const duration = 500; 
+
+            function loop(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const progress = timestamp - startTime;
+                diceElements.forEach(d => {
+                    if(!d.isDecayed) {
+                        d.el.innerText = Math.floor(Math.random() * 6) + 1;
+                        d.el.classList.remove('is-one');
+                    }
+                });
+                if (progress < duration) animationFrameId = requestAnimationFrame(loop);
+                else finalizeRoll();
+            }
+            animationFrameId = requestAnimationFrame(loop);
+        }
+
+        function finalizeRoll() {
+            let onesCount = 0;
+            diceElements.forEach(d => {
+                if(!d.isDecayed) {
+                    const finalVal = Math.floor(Math.random() * 6) + 1;
+                    d.value = finalVal;
+                    d.el.innerText = finalVal;
+                    if(finalVal === 1) {
+                        d.el.classList.add('is-one');
+                        onesCount++;
+                    }
+                }
+            });
+            statusMessage.innerText = `「1」が ${onesCount} 個出ました。取り除いてください。`;
+            btnRemove.disabled = false;
+            btnRoll.disabled = true; 
+            btnAuto10.disabled = true; 
+            btnFinish.disabled = true; 
+        }
+
+        function removeDecayed() {
+            let removed = 0;
+            diceElements.forEach(d => {
+                if(!d.isDecayed && d.value === 1) {
+                    d.isDecayed = true;
+                    d.el.classList.remove('is-one');
+                    d.el.classList.add('decayed');
+                    removed++;
+                }
+            });
+            turn++;
+            currentCount -= removed;
+            countDisplay.innerText = `N = ${currentCount}`;
+            historyData.push({x: turn, y: currentCount});
+            updateChartData();
+            btnRemove.disabled = true;
+            checkCompletion();
+        }
+
+        function runAuto10() {
+            if(currentCount <= 0) return;
+            setControlsDisabled(true);
+            const loops = 10;
+            for(let k=0; k<loops; k++) {
+                if(currentCount <= 0) break;
+                let removed = 0;
+                diceElements.forEach(d => {
+                    if(!d.isDecayed && Math.random() < 1/6) {
+                        d.isDecayed = true;
+                        d.el.classList.add('decayed');
+                        removed++;
+                    }
+                });
+                turn++;
+                currentCount -= removed;
+                historyData.push({x: turn, y: currentCount});
+            }
+            countDisplay.innerText = `N = ${currentCount}`;
+            diceElements.forEach(d => {
+                if(!d.isDecayed) { d.el.innerText = '?'; d.el.classList.remove('is-one'); }
+            });
+            updateChartData();
+            statusMessage.innerText = "10回進めました。";
+            checkCompletion();
+        }
+
+        function checkCompletion() {
+            if(historyData.length >= 3) btnFinish.disabled = false;
+            
+            if(currentCount > 0) {
+                btnRoll.disabled = false;
+                btnAuto10.disabled = false;
+                btnReset.disabled = false;
+                btnChange.disabled = false;
+                if(statusMessage.innerText !== "10回進めました。") statusMessage.innerText = `残り ${currentCount} 個。`;
+            } else {
+                statusMessage.innerText = "実験終了可能。";
+                btnRoll.disabled = true;
+                btnRemove.disabled = true;
+                btnAuto10.disabled = true;
+                btnReset.disabled = false;
+            }
+        }
+
+        function setControlsDisabled(disabled) {
+            btnChange.disabled = disabled;
+            btnReset.disabled = disabled;
+            btnRoll.disabled = disabled;
+            btnRemove.disabled = disabled;
+            btnAuto10.disabled = disabled;
+            btnFinish.disabled = disabled;
+        }
+
+        function finishExperiment() {
+            if(historyData.length < 2) return;
+            const N0 = historyData[0].y;
+            const lnN0 = Math.log(N0);
+            
+            let sumXY = 0;
+            let sumXX = 0;
+            
+            historyData.forEach(d => {
+                if(d.y > 0) {
+                    const t = d.x;
+                    const lnN = Math.log(d.y);
+                    const Y = lnN - lnN0;
+                    const X = t;
+                    sumXY += X * Y;
+                    sumXX += X * X;
+                }
+            });
+
+            if(sumXX === 0) return;
+
+            const B = sumXY / sumXX;
+            const T = Math.log(0.5) / B;
+
+            const fitData = [];
+            for(let t = 0; t <= FIXED_X_MAX; t += 0.5) {
+                const y = N0 * Math.exp(B * t);
+                fitData.push({x: t, y: y});
+            }
+
+            chart.data.datasets[1].data = fitData;
+            chart.update();
+
+            fittingResult.style.display = 'block';
+            const t_fixed = T.toFixed(2);
+            
+            const formulaStr = `
+                \\text{フィッティング結果 (初期値固定):} \\\\
+                N = ${N0} \\times \\left(\\frac{1}{2}\\right)^{\\frac{t}{${t_fixed}}} \\\\
+                (半減期 T \\approx ${t_fixed} \\text{回})
+            `;
+            
+            katex.render(formulaStr, fittingResult, { throwOnError: false });
+            statusMessage.innerText = `フィッティング完了。半減期は約 ${t_fixed} 回です。`;
+            
+            btnChange.disabled = false;
+            btnReset.disabled = false;
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('decayChart').getContext('2d');
+            chart = new Chart(ctx, {
+                data: {
+                    datasets: [
+                        { 
+                            type: 'scatter', 
+                            label: '実験値 N', 
+                            data: [], 
+                            backgroundColor: '#e74c3c', 
+                            pointRadius: 4,
+                            clip: false
+                        },
+                        { 
+                            type: 'line', 
+                            label: '近似曲線', 
+                            data: [], 
+                            borderColor: '#8e44ad', 
+                            borderWidth: 2, 
+                            pointRadius: 0, 
+                            fill: false, 
+                            tension: 0.4 
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { type: 'linear', position: 'bottom', title: {display:true, text:'回数 (t)'}, min: 0, max: FIXED_X_MAX, ticks: {stepSize: 1} },
+                        y: { 
+                            title: {display:true, text:'個数 (N)'}, 
+                            min: 0, 
+                            max: 120
+                        }
+                    },
+                    plugins: { legend: { display: true } },
+                    animation: false
+                }
+            });
+        }
+
+        function updateChartData() {
+            chart.data.datasets[0].data = historyData;
+            chart.update();
+        }
+    </script>
+</body>
+</html>
