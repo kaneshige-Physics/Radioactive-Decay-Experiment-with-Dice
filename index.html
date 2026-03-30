@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>サイコロを用いた放射性崩壊モデル実験</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
     <style>
         :root {
             --dice-size: 30px;
@@ -15,12 +15,28 @@
             --dice-gap: 3px;
         }
 
-        body {
-            font-family: "Helvetica Neue", Arial, sans-serif;
+        /* 画面全体のスクロールを無効化し、中央配置 */
+        body, html {
             margin: 0; padding: 0;
-            height: 100vh;
-            display: flex; flex-direction: column;
-            background-color: #2c3e50; color: #333;
+            width: 100%; height: 100%;
+            background-color: #1a252f; /* 外側の余白は少し暗く */
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: "Helvetica Neue", Arial, sans-serif;
+        }
+
+        /* PCサイズ(1024x768)で固定されたシミュレーション画面 */
+        #app-wrapper {
+            width: 1024px;
+            height: 768px;
+            background-color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            transform-origin: center center;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            position: relative;
             overflow: hidden;
         }
 
@@ -71,7 +87,7 @@
         .dice.decayed { opacity: 0; pointer-events: none; }
 
         /* 下部エリア */
-        #bottom-container { flex: 4; display: flex; gap: 10px; padding: 0 10px 10px 10px; min-height: 0; }
+        #bottom-container { flex: 4; display: flex; gap: 10px; padding: 0 10px 10px 10px; }
         
         #controls-panel {
             flex: 1; background-color: #fff; border-radius: 8px; padding: 15px;
@@ -107,7 +123,8 @@
         #btnRoll { background-color: #3498db; flex: 1; }
         #btnRemove { background-color: #e74c3c; flex: 1; }
         #btnAuto10 { background-color: #27ae60; }
-        #btnFinish { background-color: #8e44ad; margin-top: 5px; }
+        #btnFinish { background-color: #e67e22; margin-top: 5px; }
+        #btnFit { background-color: #8e44ad; margin-top: 5px; display: none; }
 
         #fittingResult {
             position: absolute; top: 10px; right: 15px;
@@ -116,51 +133,78 @@
             display: none; pointer-events: none; z-index: 100;
         }
     </style>
-    <meta property="og:image" content="https://kaneshige-Physics.github.io/Radioactive-Decay-Experiment-with-Dice/ogp-image.png">
-<meta property="og:description" content="500個のサイコロを使って放射性崩壊の確率的な振る舞いを視覚化するシミュレーターです">
+    <meta property="og:image" content="https://kaneshigenobutsuri.github.io/Radioactive-Decay-Experiment-with-Dice/ogp-image.png">
+<meta property="og:description" content="サイコロを使って「放射性崩壊（半減期）」の仕組みを直感的に学べるWebシミュレーションです。ブラウザ上でサイコロを振って減少の様子をグラフ化し、近似曲線から半減期を求める実験が手軽に体験できます。">
 </head>
 <body>
 
-    <div id="top-panel">
-        <div id="header-row">
-            <h2>原子核 (サイコロ) の状態 <span id="countDisplay" style="float:right;">N = 0</span></h2>
-        </div>
-        <div id="diceContainer"></div>
-    </div>
-
-    <div id="bottom-container">
-        <div id="controls-panel">
-            <div class="input-row">
-                <label>初期個数:</label>
-                <input type="number" id="initialInput" value="120" min="1" max="500">
-                <button id="btnChange">変更</button>
+    <!-- 1024x768 固定のラッパー。これが画面に合わせて自動縮小される -->
+    <div id="app-wrapper">
+        <div id="top-panel">
+            <div id="header-row">
+                <h2>原子核 (サイコロ) の状態 <span id="countDisplay" style="float:right;">N = 0</span></h2>
             </div>
-            
-            <button id="btnReset">最初から (同じ数でリセット)</button>
-            
-            <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
-            
-            <div class="btn-row">
-                <button id="btnRoll" disabled>① 振る</button>
-                <button id="btnRemove" disabled>② 取り除く</button>
-            </div>
-            <button id="btnAuto10" disabled>10回連続で進める</button>
-            
-            <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
-            <button id="btnFinish" disabled>実験終了 (グラフ作成)</button>
-            
-            <div class="status-text" id="statusMessage">初期値を設定して変更を押してください</div>
+            <div id="diceContainer"></div>
         </div>
 
-        <div id="graph-panel">
-            <div id="fittingResult"></div>
-            <div id="chartWrapper">
-                <canvas id="decayChart"></canvas>
+        <div id="bottom-container">
+            <div id="controls-panel">
+                <div class="input-row">
+                    <label>初期個数 (最大500):</label>
+                    <input type="number" id="initialInput" value="120" min="1" max="500">
+                    <button id="btnChange">変更</button>
+                </div>
+                
+                <button id="btnReset">最初から (同じ数でリセット)</button>
+                
+                <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
+                
+                <div class="btn-row">
+                    <button id="btnRoll" disabled>① 振る</button>
+                    <button id="btnRemove" disabled>② 取り除く</button>
+                </div>
+                <button id="btnAuto10" disabled>10回連続で進める</button>
+                
+                <div style="height: 1px; background: #eee; margin: 2px 0;"></div>
+                <button id="btnFinish" disabled>実験終了</button>
+                <button id="btnFit" disabled>近似曲線を引く</button>
+                
+                <div class="status-text" id="statusMessage">初期値を設定して変更を押してください</div>
+            </div>
+
+            <div id="graph-panel">
+                <div id="fittingResult"></div>
+                <div id="chartWrapper">
+                    <canvas id="decayChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // ==========================================
+        // 自動スケール（縮小）処理
+        // ==========================================
+        function resizeToFit() {
+            const wrapper = document.getElementById('app-wrapper');
+            const targetWidth = 1024;
+            const targetHeight = 768;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+
+            // X方向とY方向の縮小率のうち、小さい方を採用（1.0倍を上限とする）
+            const scale = Math.min(windowWidth / targetWidth, windowHeight / targetHeight, 1.0);
+            
+            wrapper.style.transform = `scale(${scale})`;
+        }
+
+        window.addEventListener('resize', resizeToFit);
+        // 初期化時に実行
+        resizeToFit();
+
+        // ==========================================
+        // サイコロ・シミュレーションのロジック
+        // ==========================================
         const MAX_DICE = 500;
         const FIXED_X_MAX = 30;
 
@@ -182,16 +226,13 @@
         const btnRemove = document.getElementById('btnRemove');
         const btnAuto10 = document.getElementById('btnAuto10');
         const btnFinish = document.getElementById('btnFinish');
+        const btnFit = document.getElementById('btnFit');
         const fittingResult = document.getElementById('fittingResult');
         const initialInput = document.getElementById('initialInput');
 
         window.onload = function() {
             initChart();
             applyInitialCount(120);
-            window.addEventListener('resize', () => {
-                if(animationFrameId) cancelAnimationFrame(animationFrameId);
-                animationFrameId = requestAnimationFrame(adjustDiceSize);
-            });
         };
 
         btnChange.onclick = () => {
@@ -210,12 +251,13 @@
         btnRemove.onclick = removeDecayed;
         btnAuto10.onclick = runAuto10;
         btnFinish.onclick = finishExperiment;
+        btnFit.onclick = drawFittingCurve;
         
         initialInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') btnChange.click();
         });
 
-        // --- レイアウト調整 ---
+        // --- レイアウト調整（内部コンテナ1024x768に基づく計算） ---
         function adjustDiceSize() {
             if (currentCount <= 0) return;
             const cw = diceContainer.clientWidth;
@@ -247,25 +289,32 @@
             initialCount = val;
             currentCount = val;
 
-            // 1. グラフの上限を更新（余白を持たせる）
             const yMaxBuffer = Math.ceil(initialCount * 1.1);
             chart.options.scales.y.max = yMaxBuffer;
             
-            // 2. 過去のフィッティング結果をクリア
             fittingResult.style.display = 'none';
+            btnFinish.style.display = 'block';
+            btnFinish.disabled = true;
+            btnFit.style.display = 'none';
+            btnFit.disabled = true;
             chart.data.datasets[1].data = [];
 
-            // 3. サイコロ生成と初期データのプロットを実行
+            // 理論値 (確率 1/6 で崩壊、すなわち 5/6 が残る) の曲線を計算
+            const theoreticalData = [];
+            for (let t = 0; t <= FIXED_X_MAX; t += 0.5) {
+                const y = initialCount * Math.pow(5/6, t);
+                theoreticalData.push({x: t, y: y});
+            }
+            chart.data.datasets[2].data = theoreticalData;
+
             generateDice(initialCount);
         }
 
         function generateDice(count) {
             turn = 0;
-            // 重要：ここで初期データ(t=0)を設定
             historyData = [{x: 0, y: count}];
             diceElements = [];
 
-            // サイコロDOM生成
             diceContainer.innerHTML = '';
             const fragment = document.createDocumentFragment();
             for(let i=0; i<count; i++) {
@@ -277,12 +326,12 @@
             }
             diceContainer.appendChild(fragment);
 
+            // 生成後にサイズを再計算
             adjustDiceSize();
 
             statusMessage.innerText = `準備完了 (N=${count})`;
             countDisplay.innerText = `N = ${count}`;
             
-            // グラフを更新（t=0の点を描画）
             updateChartData();
             
             btnReset.disabled = false;
@@ -408,6 +457,14 @@
         }
 
         function finishExperiment() {
+            setControlsDisabled(true);
+            btnFinish.style.display = 'none';
+            btnFit.style.display = 'block';
+            btnFit.disabled = false;
+            statusMessage.innerText = "実験終了。近似曲線を引いて半減期を求めましょう。";
+        }
+
+        function drawFittingCurve() {
             if(historyData.length < 2) return;
             const N0 = historyData[0].y;
             const lnN0 = Math.log(N0);
@@ -454,6 +511,7 @@
             
             btnChange.disabled = false;
             btnReset.disabled = false;
+            btnFit.disabled = true;
         }
 
         function initChart() {
@@ -475,6 +533,17 @@
                             data: [], 
                             borderColor: '#8e44ad', 
                             borderWidth: 2, 
+                            pointRadius: 0, 
+                            fill: false, 
+                            tension: 0.4 
+                        },
+                        { 
+                            type: 'line', 
+                            label: '理論値 (p=1/6)', 
+                            data: [], 
+                            borderColor: '#27ae60', 
+                            borderWidth: 2, 
+                            borderDash: [5, 5], /* 点線の設定 */
                             pointRadius: 0, 
                             fill: false, 
                             tension: 0.4 
